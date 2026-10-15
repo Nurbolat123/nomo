@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: nomo
+          POSTGRES_PASSWORD: nomo
+          POSTGRES_DB: nomo_test
+        ports: ["5432:5432"]
+        options: --health-cmd "pg_isready -U nomo" --health-interval 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+      - run: go mod tidy
+      - run: go vet ./...
+      - run: go test -race -p 1 ./...
+        env:
+          TEST_DATABASE_URL: postgres://nomo:nomo@localhost:5432/nomo_test?sslmode=disable
+          TEST_REDIS_ADDR: localhost:6379
+
+  admin:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: admin
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: admin/package-lock.json
+      - run: npm ci
+      - run: npm run build
+
+  flutter:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        package: [packages/core, apps/passenger, apps/driver]
+    defaults:
+      run:
+        working-directory: ${{ matrix.package }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter analyze --no-fatal-infos
+      - run: if [ -d test ]; then flutter test; fi

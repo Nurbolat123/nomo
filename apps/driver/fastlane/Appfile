@@ -1,0 +1,7 @@
+# Fill in before the first upload.
+app_identifier("com.nomo.driver")
+apple_id(ENV["APPLE_ID"])            # your Apple ID email
+team_id(ENV["APPLE_TEAM_ID"])        # Developer Portal team
+
+json_key_file(ENV["PLAY_JSON_KEY"])  # Google Play service-account key (never commit it)
+package_name("com.nomo.driver")

@@ -1,0 +1,40 @@
+# Secrets
+.env
+.env.*
+!.env.example
+*.keystore
+*.jks
+key.properties
+*.p8
+*.p12
+*.mobileprovision
+google-services.json
+GoogleService-Info.plist
+fastlane/report.xml
+
+# Go
+/backend/bin/
+/backend/uploads/
+
+# Node
+node_modules/
+/admin/dist/
+
+# Flutter / Dart
+.dart_tool/
+.packages
+.flutter-plugins
+.flutter-plugins-dependencies
+build/
+*.iml
+.idea/
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/Generated.xcconfig
+ios/Flutter/flutter_export_environment.sh
+android/.gradle/
+android/local.properties
+pubspec.lock.bak
+
+# OS
+.DS_Store
