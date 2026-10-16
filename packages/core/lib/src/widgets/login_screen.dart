@@ -107,7 +107,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     const SizedBox(height: 12),
                     Row(children: [
                       TextButton(
-                        onPressed: _resendIn > 0 ? null : () => _requestCode().catchError((Object e) => showError(context, e)),
+                        onPressed: _resendIn > 0
+                            ? null
+                            : () => _requestCode().catchError((Object e) {
+                                  if (context.mounted) showError(context, e);
+                                }),
                         child: Text(_resendIn > 0 ? s.f('resend_in', {'s': _resendIn}) : s.t('resend')),
                       ),
                       const Spacer(),

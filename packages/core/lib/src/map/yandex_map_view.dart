@@ -1,7 +1,7 @@
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
-import 'package:latlong2/latlong.dart';
 import 'package:yandex_maps_mapkit/mapkit.dart' as ym;
 import 'package:yandex_maps_mapkit/mapkit_factory.dart' as ymf;
 import 'package:yandex_maps_mapkit/ui_view.dart' as ymv;
@@ -156,8 +156,7 @@ class _YandexMapViewState extends NomoMapViewState<YandexMapView> {
     if (trail.length >= 2) {
       final line = _trailLine ??= layer.addPolylineWithGeometry(ym.Polyline(trail.map(_pt).toList()))
         ..zIndex = 1
-        ..strokeWidth = 5
-        ..outlineWidth = 0
+        ..style = const ym.LineStyle(strokeWidth: 5, turnRadius: 14)
         ..setStrokeColor(dark ? const Color(0x99FFC93C) : const Color(0x80575757));
       line.geometry = ym.Polyline(trail.map(_pt).toList());
       line.visible = true;
@@ -169,9 +168,7 @@ class _YandexMapViewState extends NomoMapViewState<YandexMapView> {
     if (ahead.length >= 2) {
       final line = _routeLine ??= layer.addPolylineWithGeometry(ym.Polyline(ahead.map(_pt).toList()))
         ..zIndex = 2
-        ..strokeWidth = 6
-        ..outlineWidth = 2
-        ..outlineColor = dark ? NomoColors.black : NomoColors.white
+        ..style = ym.LineStyle(strokeWidth: 6, outlineWidth: 2, turnRadius: 14, outlineColor: dark ? NomoColors.black : NomoColors.white)
         ..setStrokeColor(dark ? NomoColors.gold : NomoColors.black);
       line.geometry = ym.Polyline(ahead.map(_pt).toList());
       line.visible = true;

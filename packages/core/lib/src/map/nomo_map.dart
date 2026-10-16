@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
 
@@ -28,8 +29,14 @@ class MapPin {
   String get id => key ?? '${kind.name}:${lat.toStringAsFixed(6)},${lng.toStringAsFixed(6)}';
 
   @override
-  bool operator ==(Object o) =>
-      o is MapPin && o.kind == kind && o.lat == lat && o.lng == lng && o.heading == heading && o.key == key && o.label == label;
+  bool operator ==(Object other) =>
+      other is MapPin &&
+      other.kind == kind &&
+      other.lat == lat &&
+      other.lng == lng &&
+      other.heading == heading &&
+      other.key == key &&
+      other.label == label;
 
   @override
   int get hashCode => Object.hash(kind, lat, lng, heading, key, label);
@@ -41,7 +48,7 @@ class HeatSpot {
   final int level; // 1..3
 
   @override
-  bool operator ==(Object o) => o is HeatSpot && o.lat == lat && o.lng == lng && o.level == level;
+  bool operator ==(Object other) => other is HeatSpot && other.lat == lat && other.lng == lng && other.level == level;
 
   @override
   int get hashCode => Object.hash(lat, lng, level);

@@ -1,4 +1,4 @@
-/// Formatting helpers that avoid locale data downloads.
+// Formatting helpers that avoid locale data downloads.
 
 /// 1200 → "1 200 ₸"
 String money(int amount, {String currency = 'KZT'}) {
