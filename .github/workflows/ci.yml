@@ -30,7 +30,7 @@ jobs:
           go-version: "1.24"
       - run: go mod tidy
       - run: go vet ./...
-      - run: go test -race -p 1 ./...
+      - run: $GITHUB_WORKSPACE/tool/ci_run.sh "go test" go test -race -p 1 ./...
         env:
           TEST_DATABASE_URL: postgres://nomo:nomo@localhost:5432/nomo_test?sslmode=disable
           TEST_REDIS_ADDR: localhost:6379
@@ -64,9 +64,9 @@ jobs:
         with:
           channel: stable
           cache: true
-      - run: flutter pub get
-      - run: flutter analyze --no-fatal-infos
-      - run: if [ -d test ]; then flutter test; fi
+      - run: $GITHUB_WORKSPACE/tool/ci_run.sh "pub get ${{ matrix.package }}" flutter pub get
+      - run: $GITHUB_WORKSPACE/tool/ci_run.sh "analyze ${{ matrix.package }}" flutter analyze --no-fatal-infos
+      - run: if [ -d test ]; then $GITHUB_WORKSPACE/tool/ci_run.sh "test ${{ matrix.package }}" flutter test; fi
 
   # Builds a debug APK of each app to check the native side (Yandex MapKit,
   # permissions, Gradle). Set the repository secret YANDEX_MAPKIT_KEY to get
@@ -104,7 +104,7 @@ jobs:
           DEFINES=""
           [ -n "$YANDEX_MAPKIT_KEY" ] && DEFINES="$DEFINES --dart-define=YANDEX_MAPKIT_KEY=$YANDEX_MAPKIT_KEY"
           [ -n "$API_URL" ] && DEFINES="$DEFINES --dart-define=API_URL=$API_URL"
-          flutter build apk --debug $DEFINES
+          $GITHUB_WORKSPACE/tool/ci_run.sh "apk ${{ matrix.app }}" flutter build apk --debug $DEFINES
       - uses: actions/upload-artifact@v4
         with:
           name: nomo-${{ matrix.app }}-debug-apk
