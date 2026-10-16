@@ -1,0 +1,32 @@
+name: deps-src
+on:
+  push:
+    branches: [deps-src]
+permissions:
+  contents: write
+jobs:
+  dump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with: { channel: stable }
+      - run: |
+          flutter --version > flutter-version.txt
+          mkdir probe && cd probe
+          flutter create --platforms android -t app . >/dev/null
+          flutter pub add yandex_maps_mapkit
+          flutter pub get
+          grep -A2 "yandex_maps_mapkit" pubspec.lock > ../mapkit-version.txt
+          P=$(find ~/.pub-cache/hosted -maxdepth 2 -type d -name "yandex_maps_mapkit-*" | head -1)
+          echo "$P" >> ../mapkit-version.txt
+          mkdir -p ../dump && cp -r "$P/lib" ../dump/lib && cp "$P/pubspec.yaml" ../dump/ && cp -r "$P/android" ../dump/android 2>/dev/null || true
+          find ../dump -name "*.so" -delete; find ../dump -name "*.aar" -delete; find ../dump -name "*.xcframework" -prune -exec rm -rf {} \;
+          du -sh ../dump
+      - run: |
+          git config user.name ci && git config user.email ci@example.com
+          git checkout --orphan deps-dump
+          git rm -rq --cached . 
+          git add -f dump flutter-version.txt mapkit-version.txt
+          git commit -qm "dump mapkit sources"
+          git push -f origin deps-dump
