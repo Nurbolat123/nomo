@@ -148,6 +148,7 @@ type Offer struct {
 	ChildSeat       bool      `json:"child_seat"`
 	WithPet         bool      `json:"with_pet"`
 	ExpiresAt       time.Time `json:"expires_at"`
+	Route           string    `json:"route"`
 }
 
 // dispatch offers the order to drivers one at a time, nearest first, widening
@@ -229,6 +230,7 @@ func (a *App) buildOffer(o *Order, c candidate, expires time.Time) Offer {
 		OrderID: o.ID, Tariff: o.Tariff, From: o.From, To: o.To, Price: o.Price, Currency: a.cfg.Currency,
 		DistanceM: o.DistanceM, DurationS: o.DurationS, PickupDistanceM: int(c.distM * geo.RoadFactor), PickupEtaS: c.etaS,
 		PaymentMethod: o.PaymentMethod, Comment: o.Comment, ChildSeat: o.ChildSeat, WithPet: o.WithPet, ExpiresAt: expires,
+		Route: o.Route,
 	}
 	if o.Passenger != nil {
 		off.PassengerRating = o.Passenger.Rating

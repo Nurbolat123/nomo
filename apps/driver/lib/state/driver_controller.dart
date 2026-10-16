@@ -16,6 +16,9 @@ class DriverState {
     this.demand = const [],
     this.earnings,
     this.notice,
+    this.approach = const [],
+    this.tripRoute = const [],
+    this.remainingM,
   });
 
   final DriverProfile? profile;
@@ -28,6 +31,30 @@ class DriverState {
 
   /// One-off message for the UI (e.g. "passenger cancelled").
   final String? notice;
+
+  /// Road route from the driver to the pickup.
+  final List<LatLng> approach;
+
+  /// Road route from the pickup (or the driver, once rerouted) to the destination.
+  final List<LatLng> tripRoute;
+
+  /// Meters left on the current route (from the map).
+  final double? remainingM;
+
+  /// Route for the map at the current stage.
+  List<LatLng> get activeRoute {
+    final o = order;
+    if (o == null) return offer == null ? const [] : RouteMath.decode(offer!.route);
+    switch (o.status) {
+      case OrderStatus.assigned:
+        return approach;
+      case OrderStatus.arrived:
+      case OrderStatus.inProgress:
+        return tripRoute;
+      default:
+        return const [];
+    }
+  }
 
   bool get online => profile?.online == true;
 
@@ -43,6 +70,9 @@ class DriverState {
     Earnings? earnings,
     String? notice,
     bool clearNotice = false,
+    List<LatLng>? approach,
+    List<LatLng>? tripRoute,
+    double? remainingM,
   }) =>
       DriverState(
         profile: profile ?? this.profile,
@@ -53,6 +83,9 @@ class DriverState {
         demand: demand ?? this.demand,
         earnings: earnings ?? this.earnings,
         notice: clearNotice ? null : notice ?? this.notice,
+        approach: clearOrder ? const [] : approach ?? this.approach,
+        tripRoute: clearOrder ? const [] : tripRoute ?? this.tripRoute,
+        remainingM: clearOrder ? null : remainingM ?? this.remainingM,
       );
 }
 
@@ -109,6 +142,7 @@ class DriverController extends Notifier<DriverState> {
       final order = await _api.driverActiveOrder();
       if (order != null) {
         state = state.copyWith(order: order, clearOffer: true);
+        unawaited(buildRoute());
       } else if (state.order?.isActive == true) {
         state = state.copyWith(clearOrder: true);
       }
@@ -148,6 +182,7 @@ class DriverController extends Notifier<DriverState> {
     try {
       final o = await _api.acceptOffer(offer.orderId);
       state = state.copyWith(order: o, clearOffer: true);
+      unawaited(buildRoute());
     } catch (e) {
       state = state.copyWith(clearOffer: true);
       rethrow;
@@ -166,10 +201,12 @@ class DriverController extends Notifier<DriverState> {
 
   Future<void> arrived() async {
     state = state.copyWith(order: await _api.driverArrived(state.order!.id));
+    unawaited(buildRoute());
   }
 
   Future<void> startTrip() async {
     state = state.copyWith(order: await _api.driverStart(state.order!.id));
+    unawaited(buildRoute());
   }
 
   Future<void> complete() async {
@@ -209,6 +246,43 @@ class DriverController extends Notifier<DriverState> {
     } catch (_) {}
   }
 
+  bool _routing = false;
+  String? _routedFor;
+
+  /// Builds the road route for the current stage: to the pickup while
+  /// assigned, to the destination after pickup. [force] rebuilds from the
+  /// driver's position (used when the map says the car left the route).
+  Future<void> buildRoute({bool force = false}) async {
+    final o = state.order, me = state.position;
+    if (o == null || _routing) return;
+    final stage = '${o.id}:${o.status.name}';
+    if (!force && _routedFor == stage) return;
+    _routing = true;
+    try {
+      final svc = ref.read(routeServiceProvider);
+      final pickup = LatLng(o.from.lat, o.from.lng), dest = LatLng(o.to.lat, o.to.lng);
+      if (o.status == OrderStatus.assigned) {
+        if (me == null) return;
+        final r = await svc.drive(me, pickup);
+        if (r != null && state.order?.id == o.id) state = state.copyWith(approach: r.points);
+      } else if (o.status == OrderStatus.arrived || o.status == OrderStatus.inProgress) {
+        final saved = RouteMath.decode(o.route);
+        if (!force && saved.length >= 2) {
+          state = state.copyWith(tripRoute: saved);
+        } else {
+          final from = force && me != null ? me : pickup;
+          final r = await svc.drive(from, dest);
+          if (r != null && state.order?.id == o.id) state = state.copyWith(tripRoute: r.points);
+        }
+      }
+      _routedFor = stage;
+    } finally {
+      _routing = false;
+    }
+  }
+
+  void setRemaining(double m) => state = state.copyWith(remainingM: m);
+
   void _onOrder(Order o) {
     final me = state.profile?.id;
     if (o.driverId != me && state.order?.id == o.id) {
@@ -223,11 +297,14 @@ class DriverController extends Notifier<DriverState> {
       return;
     }
     state = state.copyWith(order: o, clearOffer: true);
+    unawaited(buildRoute());
   }
 
   void _onPosition(Position p) {
     final pos = LatLng(p.latitude, p.longitude);
+    final hadPosition = state.position != null;
     state = state.copyWith(position: pos, heading: p.heading >= 0 ? p.heading : state.heading);
+    if (!hadPosition && state.order?.status == OrderStatus.assigned && state.approach.isEmpty) unawaited(buildRoute(force: true));
     final sent = ref.read(realtimeProvider).send({'type': 'location', 'lat': p.latitude, 'lng': p.longitude, 'heading': p.heading});
     if (!sent && DateTime.now().difference(_lastHttpLocation) > const Duration(seconds: 5)) {
       _lastHttpLocation = DateTime.now();

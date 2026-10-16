@@ -20,6 +20,7 @@ import (
 
 	"github.com/nomo-taxi/nomo/backend/internal/config"
 	"github.com/nomo-taxi/nomo/backend/internal/db"
+	"github.com/nomo-taxi/nomo/backend/internal/geo"
 	"github.com/nomo-taxi/nomo/backend/internal/payments"
 	"github.com/nomo-taxi/nomo/backend/internal/push"
 	"github.com/nomo-taxi/nomo/backend/internal/sms"
@@ -196,7 +197,7 @@ func TestFullRide(t *testing.T) {
 	}
 	o := e.do("POST", "/v1/orders", pas, order, 201)
 	id := o["id"].(string)
-	if o["status"] != "searching" || int(o["price"].(float64)) != price {
+	if o["status"] != "searching" || int(o["price"].(float64)) != price || o["route"] != "" {
 		t.Fatalf("order = %v", o)
 	}
 	e.do("POST", "/v1/orders", pas, order, 409) // one active order at a time
@@ -307,6 +308,38 @@ func TestDriverDeclineGoesToNext(t *testing.T) {
 	e.do("POST", "/v1/orders/"+id+"/cancel", pas, nil, 200)
 	e.do("DELETE", "/v1/me", pas, nil, 200)
 	e.do("GET", "/v1/me", pas, nil, 401)
+}
+
+func TestOrderWithRoadRoute(t *testing.T) {
+	e := setup(t, nil)
+	pas := e.login("+77020000009", "passenger")
+	a := geo.Point{Lat: pickLat, Lng: pickLng}
+	mid := geo.Point{Lat: pickLat, Lng: destLng}
+	b := geo.Point{Lat: destLat, Lng: destLng}
+	length := int(geo.Length([]geo.Point{a, mid, b}))
+	trip := map[string]any{
+		"from":  map[string]any{"lat": pickLat, "lng": pickLng},
+		"to":    map[string]any{"lat": destLat, "lng": destLng},
+		"route": map[string]any{"distance_m": length, "duration_s": length / 8, "polyline": geo.Encode([]geo.Point{a, mid, b})},
+	}
+	var quotes []map[string]any
+	req, _ := http.NewRequest("POST", e.srv.URL+"/v1/quotes", bytes.NewReader(mustJSON(trip)))
+	req.Header.Set("Authorization", "Bearer "+pas)
+	resp, _ := http.DefaultClient.Do(req)
+	_ = json.NewDecoder(resp.Body).Decode(&quotes)
+	resp.Body.Close()
+	if int(quotes[0]["distance_m"].(float64)) != length {
+		t.Fatalf("quote ignored the road route: %v (want %d m)", quotes[0], length)
+	}
+	trip["tariff"], trip["payment_method"] = "economy", "cash"
+	o := e.do("POST", "/v1/orders", pas, trip, 201)
+	if o["route"] == "" || int(o["distance_m"].(float64)) != length || o["price"] != quotes[0]["price"] {
+		t.Fatalf("order = %v", o)
+	}
+	pts, err := geo.Decode(o["route"].(string))
+	if err != nil || len(pts) != 3 {
+		t.Fatalf("stored route = %v %v", pts, err)
+	}
 }
 
 func pollOffer(t *testing.T, e *env, tok string) map[string]any {

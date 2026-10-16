@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nomo-taxi/nomo/backend/internal/geo"
 	"github.com/nomo-taxi/nomo/backend/internal/payments"
 	"github.com/nomo-taxi/nomo/backend/internal/pricing"
 	"github.com/nomo-taxi/nomo/backend/internal/push"
@@ -35,8 +34,9 @@ type QuoteItem struct {
 }
 
 type tripInput struct {
-	From Place `json:"from"`
-	To   Place `json:"to"`
+	From  Place      `json:"from"`
+	To    Place      `json:"to"`
+	Route *RouteHint `json:"route"`
 }
 
 func (in tripInput) valid() bool {
@@ -52,7 +52,7 @@ func (a *App) quote(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid_route", "Укажите адреса подачи и назначения")
 		return
 	}
-	items, err := a.quoteAll(r.Context(), in.From, in.To)
+	items, err := a.quoteAll(r.Context(), in.From, in.To, in.Route)
 	if err != nil {
 		a.internal(w, err)
 		return
@@ -60,12 +60,12 @@ func (a *App) quote(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, items)
 }
 
-func (a *App) quoteAll(ctx context.Context, from, to Place) ([]QuoteItem, error) {
+func (a *App) quoteAll(ctx context.Context, from, to Place, hint *RouteHint) ([]QuoteItem, error) {
 	ts, err := a.activeTariffs(ctx, false)
 	if err != nil {
 		return nil, err
 	}
-	route := geo.Estimate(geo.Point{Lat: from.Lat, Lng: from.Lng}, geo.Point{Lat: to.Lat, Lng: to.Lng})
+	route, _ := resolveRoute(from, to, hint)
 	surge := a.surgeAt(ctx, from)
 	out := make([]QuoteItem, 0, len(ts))
 	for _, t := range ts {
@@ -159,7 +159,7 @@ func (a *App) createOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	route := geo.Estimate(geo.Point{Lat: in.From.Lat, Lng: in.From.Lng}, geo.Point{Lat: in.To.Lat, Lng: in.To.Lng})
+	route, polyline := resolveRoute(in.From, in.To, in.Route)
 	surge := a.surgeAt(ctx, in.From)
 	price := pricing.Price(t, route.DistanceM, route.DurationS, surge)
 
@@ -185,12 +185,12 @@ func (a *App) createOrder(w http.ResponseWriter, r *http.Request) {
 	err = a.db.QueryRow(ctx, `
 		INSERT INTO orders (passenger_id, tariff, status, from_lat, from_lng, from_addr, to_lat, to_lng, to_addr,
 			distance_m, duration_s, surge, price, payment_method, payment_method_id, payment_ref, payment_status,
-			comment, child_seat, with_pet)
-		VALUES ($1,$2,'searching',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+			comment, child_seat, with_pet, route_polyline)
+		VALUES ($1,$2,'searching',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
 		RETURNING id`,
 		uid, t.Code, in.From.Lat, in.From.Lng, in.From.Addr, in.To.Lat, in.To.Lng, in.To.Addr,
 		route.DistanceM, route.DurationS, surge, price, in.PaymentMethod, pmID, payRef, payStatus,
-		strings.TrimSpace(in.Comment), in.ChildSeat, in.WithPet).Scan(&id)
+		strings.TrimSpace(in.Comment), in.ChildSeat, in.WithPet, polyline).Scan(&id)
 	if err != nil {
 		if payRef != "" {
 			_ = a.pay.Void(ctx, payRef)

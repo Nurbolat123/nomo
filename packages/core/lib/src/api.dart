@@ -128,8 +128,9 @@ class ApiClient {
 
   // ---- passenger ----
 
-  Future<List<QuoteItem>> quote(Place from, Place to) async =>
-      parseList(await _post('/v1/quotes', {'from': from.toJson(), 'to': to.toJson()}), QuoteItem.fromJson);
+  /// [route] is the road route hint from [RoadRoute.toHint] (Yandex MapKit).
+  Future<List<QuoteItem>> quote(Place from, Place to, {Map<String, dynamic>? route}) async => parseList(
+      await _post('/v1/quotes', {'from': from.toJson(), 'to': to.toJson(), if (route != null) 'route': route}), QuoteItem.fromJson);
 
   Future<List<NearbyCar>> nearby(double lat, double lng) async =>
       parseList(await _get('/v1/drivers/nearby', q: {'lat': lat, 'lng': lng}), NearbyCar.fromJson);
@@ -143,8 +144,10 @@ class ApiClient {
     String comment = '',
     bool childSeat = false,
     bool withPet = false,
+    Map<String, dynamic>? route,
   }) async =>
       Order.fromJson(await _post('/v1/orders', {
+        if (route != null) 'route': route,
         'from': from.toJson(),
         'to': to.toJson(),
         'tariff': tariff,

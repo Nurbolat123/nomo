@@ -82,10 +82,14 @@ class Order {
         startedAt = _t(j['started_at']),
         completedAt = _t(j['completed_at']),
         currency = _s(j['currency']),
+        route = _s(j['route']),
         driver = j['driver'] == null ? null : DriverCard.fromJson(j['driver'] as Map<String, dynamic>),
         passenger = j['passenger'] == null ? null : PassengerCard.fromJson(j['passenger'] as Map<String, dynamic>);
 
   final String id, passengerId, tariff, paymentMethod, paymentStatus, comment, cancelledBy, currency;
+
+  /// Road route pickup → destination (encoded polyline), may be empty.
+  final String route;
   final String? driverId;
   final OrderStatus status;
   final Place from, to;
@@ -137,8 +141,9 @@ class Offer {
         comment = _s(j['comment']),
         childSeat = j['child_seat'] == true,
         withPet = j['with_pet'] == true,
-        expiresAt = _t(j['expires_at'])!;
-  final String orderId, tariff, paymentMethod, comment;
+        expiresAt = _t(j['expires_at'])!,
+        route = _s(j['route']);
+  final String orderId, tariff, paymentMethod, comment, route;
   final Place from, to;
   final int price, distanceM, durationS, pickupDistanceM, pickupEtaS;
   final double passengerRating;

@@ -7,6 +7,7 @@ import 'router.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await initMaps();
   final tokens = TokenStore();
   await tokens.load();
   runApp(ProviderScope(

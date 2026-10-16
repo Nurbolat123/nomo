@@ -62,6 +62,7 @@ type Order struct {
 	CompletedAt     *time.Time     `json:"completed_at"`
 	CancelledAt     *time.Time     `json:"cancelled_at"`
 	Currency        string         `json:"currency"`
+	Route           string         `json:"route"` // encoded polyline pickup → destination, may be empty
 	Driver          *DriverCard    `json:"driver,omitempty"`
 	Passenger       *PassengerCard `json:"passenger,omitempty"`
 
@@ -75,7 +76,7 @@ const orderCols = `o.id, o.passenger_id, o.driver_id, o.tariff, o.status,
 	o.payment_method, o.payment_status, o.comment, o.child_seat, o.with_pet,
 	o.cancelled_by, o.cancel_reason, o.cancel_fee, o.driver_rating, o.passenger_rating,
 	o.created_at, o.assigned_at, o.arrived_at, o.started_at, o.completed_at, o.cancelled_at,
-	o.payment_ref, o.payment_method_id`
+	o.payment_ref, o.payment_method_id, o.route_polyline`
 
 func scanOrder(row pgx.Row) (*Order, error) {
 	var o Order
@@ -85,7 +86,7 @@ func scanOrder(row pgx.Row) (*Order, error) {
 		&o.PaymentMethod, &o.PaymentStatus, &o.Comment, &o.ChildSeat, &o.WithPet,
 		&o.CancelledBy, &o.CancelReason, &o.CancelFee, &o.DriverRating, &o.PassengerRating,
 		&o.CreatedAt, &o.AssignedAt, &o.ArrivedAt, &o.StartedAt, &o.CompletedAt, &o.CancelledAt,
-		&o.paymentRef, &o.paymentMethodID)
+		&o.paymentRef, &o.paymentMethodID, &o.Route)
 	if err != nil {
 		return nil, err
 	}

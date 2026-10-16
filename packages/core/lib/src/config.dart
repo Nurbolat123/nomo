@@ -8,9 +8,15 @@ class NomoConfig {
   /// WebSocket URL derived from [apiUrl].
   static String get wsUrl => '${apiUrl.replaceFirst(RegExp('^http'), 'ws')}/v1/ws';
 
-  /// Map tiles. OpenStreetMap is fine for development; switch to 2GIS,
-  /// Yandex or MapTiler (with your key) before launch — OSM's public tile
-  /// server does not allow heavy production traffic.
+  /// Yandex MapKit key (developer.tech.yandex.ru → MapKit Mobile SDK).
+  /// With a key the apps use Yandex maps and road routes; without it they
+  /// fall back to OpenStreetMap tiles and straight-line routes.
+  ///   flutter run --dart-define=YANDEX_MAPKIT_KEY=xxxxxxxx
+  static const yandexKey = String.fromEnvironment('YANDEX_MAPKIT_KEY');
+  static bool get hasYandexMaps => yandexKey.isNotEmpty;
+
+  /// Fallback map tiles (only without a Yandex key). OSM's public server is
+  /// for development only.
   static const tileUrl = String.fromEnvironment('TILE_URL', defaultValue: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png');
 
   static const privacyUrl = String.fromEnvironment('PRIVACY_URL', defaultValue: 'https://nomo.kz/privacy');

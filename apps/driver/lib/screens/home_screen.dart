@@ -16,8 +16,7 @@ class DriverHomeScreen extends ConsumerStatefulWidget {
 }
 
 class _DriverHomeScreenState extends ConsumerState<DriverHomeScreen> {
-  final _map = MapController();
-  bool _ready = false;
+  final _map = NomoMapController();
   bool _follow = true;
 
   Future<void> _toggleOnline(bool online) async {
@@ -43,19 +42,26 @@ class _DriverHomeScreenState extends ConsumerState<DriverHomeScreen> {
         showInfo(context, next.notice!);
         ref.read(driverProvider.notifier).clearNotice();
       }
-      final p = next.position;
-      if (_ready && _follow && p != null && p != prev?.position) _map.move(p, _map.camera.zoom);
+      // New stage of the trip: follow the car again.
+      if (prev?.order?.status != next.order?.status || (prev?.offer == null) != (next.offer == null)) {
+        _follow = true; // the screen rebuilds with the new state anyway
+      }
     });
 
     final o = s.order;
+    final offer = s.offer;
+    final active = o != null && o.isActive;
     final pins = <MapPin>[
-      if (s.position != null) MapPin(PinKind.car, s.position!.latitude, s.position!.longitude, heading: s.heading, key: 'me'),
-      if (o != null && o.isActive && o.status != OrderStatus.inProgress) MapPin(PinKind.pickup, o.from.lat, o.from.lng),
-      if (o != null && o.isActive) MapPin(PinKind.destination, o.to.lat, o.to.lng),
+      if (active && o.status != OrderStatus.inProgress) MapPin(PinKind.pickup, o.from.lat, o.from.lng, key: 'pickup'),
+      if (active) MapPin(PinKind.destination, o.to.lat, o.to.lng, key: 'destination'),
+      if (!active && offer != null) MapPin(PinKind.pickup, offer.from.lat, offer.from.lng, key: 'offer-pickup'),
+      if (!active && offer != null) MapPin(PinKind.destination, offer.to.lat, offer.to.lng, key: 'offer-destination'),
     ];
-    final route = o == null || !o.isActive
-        ? const <LatLng>[]
-        : [if (s.position != null) s.position!, if (o.status != OrderStatus.inProgress) toLatLng(o.from), toLatLng(o.to)];
+    final followWith = <LatLng>[
+      if (active && o.status == OrderStatus.assigned) LatLng(o.from.lat, o.from.lng),
+      if (!active && offer != null) LatLng(offer.from.lat, offer.from.lng),
+    ];
+    final size = MediaQuery.sizeOf(context);
 
     return Scaffold(
       drawer: const _Menu(),
@@ -64,11 +70,17 @@ class _DriverHomeScreenState extends ConsumerState<DriverHomeScreen> {
           child: NomoMap(
             controller: _map,
             center: s.position ?? const LatLng(NomoConfig.defaultLat, NomoConfig.defaultLng),
-            zoom: 15,
+            zoom: 16,
             pins: pins,
-            route: route,
-            heat: s.online && o == null ? [for (final d in s.demand) HeatSpot(d.lat, d.lng, d.level)] : const [],
-            onReady: () => _ready = true,
+            route: s.activeRoute,
+            car: s.position == null ? null : CarTarget(s.position!, heading: s.heading),
+            showTrail: active,
+            followCar: _follow,
+            followWith: followWith,
+            heat: s.online && o == null && offer == null ? [for (final d in s.demand) HeatSpot(d.lat, d.lng, d.level)] : const [],
+            padding: EdgeInsets.only(top: 110, bottom: size.height * (offer != null ? 0.5 : 0.36), left: 24, right: 24),
+            onOffRoute: () => ref.read(driverProvider.notifier).buildRoute(force: true),
+            onRemaining: ref.read(driverProvider.notifier).setRemaining,
             onMoveStart: () => setState(() => _follow = false),
           ),
         ),
@@ -93,10 +105,7 @@ class _DriverHomeScreenState extends ConsumerState<DriverHomeScreen> {
               _Round(
                 icon: _follow ? Icons.navigation_rounded : Icons.navigation_outlined,
                 tooltip: t.t('my_location'),
-                onTap: () {
-                  setState(() => _follow = true);
-                  if (_ready && s.position != null) _map.move(s.position!, 16);
-                },
+                onTap: () => setState(() => _follow = true),
               ),
             ]),
           ),

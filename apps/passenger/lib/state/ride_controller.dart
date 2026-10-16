@@ -26,6 +26,9 @@ class RideState {
     this.driverHeading = 0,
     this.cars = const [],
     this.places = const [],
+    this.tripRoute,
+    this.approach = const [],
+    this.remainingM,
   });
 
   final Place? pickup;
@@ -46,6 +49,31 @@ class RideState {
   final double driverHeading;
   final List<NearbyCar> cars;
   final List<SavedPlace> places;
+
+  /// Road route pickup → destination (Yandex MapKit, or a straight line).
+  final RoadRoute? tripRoute;
+
+  /// Road route from the assigned driver to the pickup.
+  final List<LatLng> approach;
+
+  /// Meters left along the current route (from the map), for ETA.
+  final double? remainingM;
+
+  /// What the map should draw for the current stage of the trip.
+  List<LatLng> get activeRoute {
+    final o = order;
+    if (o == null) return tripRoute?.points ?? const [];
+    switch (o.status) {
+      case OrderStatus.assigned:
+        return approach;
+      case OrderStatus.arrived:
+      case OrderStatus.inProgress:
+      case OrderStatus.searching:
+        return tripRoute?.points ?? const [];
+      default:
+        return const [];
+    }
+  }
 
   QuoteItem? get selectedQuote {
     for (final q in quotes) {
@@ -79,6 +107,11 @@ class RideState {
     double? driverHeading,
     List<NearbyCar>? cars,
     List<SavedPlace>? places,
+    RoadRoute? tripRoute,
+    bool clearTripRoute = false,
+    List<LatLng>? approach,
+    double? remainingM,
+    bool clearRemaining = false,
   }) =>
       RideState(
         pickup: pickup ?? this.pickup,
@@ -99,6 +132,9 @@ class RideState {
         driverHeading: driverHeading ?? this.driverHeading,
         cars: cars ?? this.cars,
         places: places ?? this.places,
+        tripRoute: clearTripRoute || clearDestination ? null : tripRoute ?? this.tripRoute,
+        approach: clearOrder ? const [] : approach ?? this.approach,
+        remainingM: clearRemaining || clearOrder ? null : remainingM ?? this.remainingM,
       );
 }
 
@@ -117,10 +153,12 @@ class RideController extends Notifier<RideState> {
     _subs.add(rt.on('driver.location').listen((e) {
       final d = e.data as Map<String, dynamic>;
       if (d['order_id'] != state.order?.id) return;
+      final first = state.driverPos == null;
       state = state.copyWith(
         driverPos: LatLng((d['lat'] as num).toDouble(), (d['lng'] as num).toDouble()),
         driverHeading: (d['heading'] as num?)?.toDouble() ?? 0,
       );
+      if (first || (state.order?.status == OrderStatus.assigned && state.approach.isEmpty)) unawaited(rebuildApproach());
     }));
     // Catch up on anything missed while the socket was down.
     _subs.add(rt.connection.where((c) => c).listen((_) => refreshOrder()));
@@ -181,14 +219,21 @@ class RideController extends Notifier<RideState> {
     await refreshQuotes();
   }
 
-  void clearDestination() => state = state.copyWith(clearDestination: true);
+  void clearDestination() => state = state.copyWith(clearDestination: true, clearTripRoute: true);
 
   Future<void> refreshQuotes() async {
     final from = state.pickup, to = state.destination;
     if (from == null || to == null) return;
     state = state.copyWith(quoting: true);
     try {
-      final q = await _api.quote(from, to);
+      final route = await ref.read(routeServiceProvider).drive(LatLng(from.lat, from.lng), LatLng(to.lat, to.lng));
+      // The user may have changed the points while the route was building.
+      if (state.pickup != from || state.destination != to) {
+        state = state.copyWith(quoting: false);
+        return;
+      }
+      if (route != null) state = state.copyWith(tripRoute: route);
+      final q = await _api.quote(from, to, route: route?.toHint());
       state = state.copyWith(quotes: q, quoting: false);
     } catch (_) {
       state = state.copyWith(quoting: false);
@@ -225,6 +270,7 @@ class RideController extends Notifier<RideState> {
       comment: state.comment,
       childSeat: state.childSeat,
       withPet: state.withPet,
+      route: state.tripRoute?.toHint(),
     );
     state = state.copyWith(order: o, clearDriver: true);
   }
@@ -237,7 +283,7 @@ class RideController extends Notifier<RideState> {
 
   /// Leaves the finished/cancelled trip screen; keeps the route for a quick re-order.
   void dismissOrder({bool keepRoute = true}) {
-    state = state.copyWith(clearOrder: true, clearDriver: true, clearDestination: !keepRoute);
+    state = state.copyWith(clearOrder: true, clearDriver: true, clearDestination: !keepRoute, clearTripRoute: true);
     if (keepRoute) unawaited(refreshQuotes().catchError((_) {}));
   }
 
@@ -254,13 +300,43 @@ class RideController extends Notifier<RideState> {
     final cur = state.order;
     if (cur != null && cur.id != o.id && cur.isActive) return;
     if (cur == null && !o.isActive) return;
+    final serverRoute = o.route.isEmpty ? null : RouteMath.decode(o.route);
+    final newDriver = o.driverId != cur?.driverId;
     state = state.copyWith(
       order: o,
       pickup: o.from,
       destination: o.to,
       clearDriver: o.driverId == null,
+      tripRoute: serverRoute != null && serverRoute.length >= 2 && state.tripRoute == null
+          ? RoadRoute(points: serverRoute, distanceM: o.distanceM, durationS: o.durationS)
+          : null,
+      approach: newDriver || o.status != OrderStatus.assigned ? const [] : null,
+      clearRemaining: cur?.status != o.status,
     );
+    if (o.status == OrderStatus.assigned && state.approach.isEmpty && state.driverPos != null) {
+      unawaited(rebuildApproach());
+    }
   }
+
+  bool _buildingApproach = false;
+
+  /// Builds the road route from the driver to the pickup. Called when the
+  /// driver is assigned and when the map reports the car left the route.
+  Future<void> rebuildApproach() async {
+    final o = state.order, car = state.driverPos;
+    if (o == null || car == null || o.status != OrderStatus.assigned || _buildingApproach) return;
+    _buildingApproach = true;
+    try {
+      final r = await ref.read(routeServiceProvider).drive(car, LatLng(o.from.lat, o.from.lng));
+      if (r != null && state.order?.id == o.id && state.order?.status == OrderStatus.assigned) {
+        state = state.copyWith(approach: r.points);
+      }
+    } finally {
+      _buildingApproach = false;
+    }
+  }
+
+  void setRemaining(double meters) => state = state.copyWith(remainingM: meters);
 
   Future<void> _loadCars() async {
     final p = state.pickup;

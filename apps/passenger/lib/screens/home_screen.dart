@@ -20,11 +20,13 @@ class HomeScreen extends ConsumerStatefulWidget {
 }
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
-  final _map = MapController();
-  bool _mapReady = false;
+  final _map = NomoMapController();
   bool _dragging = false;
   bool _pickingDestination = false;
   bool _online = true;
+
+  /// Camera keeps the car in view until the user drags the map.
+  bool _follow = true;
   StreamSubscription<bool>? _conn;
 
   @override
@@ -46,26 +48,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   bool _choosingPickup(RideState s) => s.order == null && s.destination == null && !_pickingDestination;
 
-  void _fit(RideState s) {
-    if (!_mapReady) return;
-    final a = s.pickup, b = s.destination;
+  bool _carOnMap(RideState s) {
     final o = s.order;
-    if (o != null && s.driverPos != null && (o.status == OrderStatus.assigned)) {
-      _fitPoints([s.driverPos!, toLatLng(o.from)]);
-    } else if (a != null && b != null) {
-      _fitPoints([toLatLng(a), toLatLng(b)]);
-    } else if (a != null) {
-      _map.move(toLatLng(a), _map.camera.zoom);
-    }
+    return o != null && s.driverPos != null && (o.status == OrderStatus.assigned || o.status == OrderStatus.arrived || o.status == OrderStatus.inProgress);
   }
 
-  void _fitPoints(List<LatLng> pts) {
-    final h = MediaQuery.sizeOf(context).height;
-    _map.fitCamera(CameraFit.bounds(
-      bounds: LatLngBounds.fromPoints(pts),
-      padding: EdgeInsets.fromLTRB(56, 120, 56, h * 0.45),
-      maxZoom: 16,
-    ));
+  /// Frames the whole route (or the pickup) when nothing is being followed.
+  void _frame(RideState s) {
+    if (!_map.isReady) return;
+    if (_carOnMap(s) && _follow) return; // the map follows the car itself
+    final route = s.activeRoute;
+    if (route.length >= 2) {
+      _map.fit(route);
+    } else if (s.pickup != null && s.destination != null) {
+      _map.fit([toLatLng(s.pickup!), toLatLng(s.destination!)]);
+    } else if (s.pickup != null) {
+      _map.moveTo(toLatLng(s.pickup!), zoom: 16.5);
+    }
   }
 
   Future<void> _openSearch({bool editFrom = false}) async {
@@ -90,7 +89,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Future<void> _confirmMapDestination() async {
-    final c = _map.camera.center;
+    final c = _map.center;
+    if (c == null) return;
     setState(() => _pickingDestination = false);
     final addr = await ref.read(geocoderProvider).reverse(c.latitude, c.longitude);
     try {
@@ -100,31 +100,53 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
   }
 
+  /// Bubble over the pickup while the driver is on the way: "4 мин".
+  String? _pickupLabel(RideState s, S t) {
+    final o = s.order;
+    if (o == null || o.status != OrderStatus.assigned) return null;
+    final m = s.remainingM;
+    if (m == null) return null;
+    return minutes((m / (28000 / 3600)).round(), unit: t.t('min'));
+  }
+
+  /// Arrival time over the destination during the trip: "12:40".
+  String? _destinationLabel(RideState s) {
+    final o = s.order;
+    if (o == null || o.status != OrderStatus.inProgress) return null;
+    final m = s.remainingM ?? o.distanceM.toDouble();
+    final at = DateTime.now().add(Duration(seconds: (m / (28000 / 3600)).round()));
+    return '${two(at.hour)}:${two(at.minute)}';
+  }
+
   @override
   Widget build(BuildContext context) {
     final s = ref.watch(rideProvider);
     final t = S.of(context);
     ref.listen<RideState>(rideProvider, (prev, next) {
-      final routeChanged = prev?.destination?.lat != next.destination?.lat ||
-          prev?.pickup?.lat != next.pickup?.lat && next.destination != null ||
-          prev?.order?.status != next.order?.status;
-      final firstDriverPos = prev?.driverPos == null && next.driverPos != null;
-      if (routeChanged || firstDriverPos) _fit(next);
+      final changed = prev?.destination != next.destination ||
+          prev?.order?.status != next.order?.status ||
+          !identical(prev?.tripRoute, next.tripRoute) ||
+          (prev?.approach.isEmpty ?? true) != next.approach.isEmpty;
+      if (prev?.order?.status != next.order?.status) _follow = true;
+      if (changed) WidgetsBinding.instance.addPostFrameCallback((_) => _frame(ref.read(rideProvider)));
     });
 
     final o = s.order;
+    final showCar = _carOnMap(s);
+    final size = MediaQuery.sizeOf(context);
     final pins = <MapPin>[
-      if (s.myLocation != null && _choosingPickup(s) == false) MapPin(PinKind.me, s.myLocation!.latitude, s.myLocation!.longitude),
-      if (!_choosingPickup(s) && s.pickup != null && !_pickingDestination) MapPin(PinKind.pickup, s.pickup!.lat, s.pickup!.lng),
-      if (s.destination != null) MapPin(PinKind.destination, s.destination!.lat, s.destination!.lng),
+      if (s.myLocation != null && !_choosingPickup(s) && o == null) MapPin(PinKind.me, s.myLocation!.latitude, s.myLocation!.longitude, key: 'me'),
+      if (!_choosingPickup(s) && s.pickup != null && !_pickingDestination && o?.status != OrderStatus.inProgress)
+        MapPin(PinKind.pickup, s.pickup!.lat, s.pickup!.lng, key: 'pickup', label: _pickupLabel(s, t)),
+      if (s.destination != null && !_pickingDestination)
+        MapPin(PinKind.destination, s.destination!.lat, s.destination!.lng, key: 'destination', label: _destinationLabel(s)),
       if (o == null)
-        for (final c in s.cars) MapPin(PinKind.car, c.lat, c.lng, heading: c.heading),
-      if (o != null && s.driverPos != null)
-        MapPin(PinKind.car, s.driverPos!.latitude, s.driverPos!.longitude, heading: s.driverHeading, key: 'driver'),
+        for (var i = 0; i < s.cars.length; i++) MapPin(PinKind.car, s.cars[i].lat, s.cars[i].lng, heading: s.cars[i].heading, key: 'near$i'),
     ];
-    final route = s.pickup != null && s.destination != null && !_pickingDestination
-        ? [toLatLng(s.pickup!), toLatLng(s.destination!)]
-        : const <LatLng>[];
+    final followWith = <LatLng>[
+      if (o?.status == OrderStatus.assigned && s.pickup != null) toLatLng(s.pickup!),
+      if (o?.status == OrderStatus.inProgress && s.destination != null) toLatLng(s.destination!),
+    ];
 
     Widget panel;
     if (_pickingDestination) {
@@ -144,13 +166,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           child: NomoMap(
             controller: _map,
             center: s.pickup != null ? toLatLng(s.pickup!) : const LatLng(NomoConfig.defaultLat, NomoConfig.defaultLng),
+            zoom: 16,
             pins: pins,
-            route: route,
-            onReady: () {
-              _mapReady = true;
-              _fit(ref.read(rideProvider));
-            },
-            onMoveStart: () => setState(() => _dragging = true),
+            route: _pickingDestination ? const [] : s.activeRoute,
+            car: showCar ? CarTarget(s.driverPos!, heading: s.driverHeading) : null,
+            showTrail: showCar,
+            followCar: showCar && _follow,
+            followWith: followWith,
+            padding: EdgeInsets.only(top: 110, bottom: size.height * 0.42, left: 24, right: 24),
+            onReady: () => _frame(ref.read(rideProvider)),
+            onOffRoute: _ctl.rebuildApproach,
+            onRemaining: _ctl.setRemaining,
+            onMoveStart: () => setState(() {
+              _dragging = true;
+              _follow = false;
+            }),
             onMoved: (c) {
               setState(() => _dragging = false);
               if (_choosingPickup(ref.read(rideProvider))) _ctl.setPickup(c);
@@ -159,7 +189,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ),
         if (_choosingPickup(s) || _pickingDestination)
           Positioned.fill(
-            bottom: MediaQuery.sizeOf(context).height * 0.30,
+            bottom: size.height * 0.30,
             child: Center(child: CenterPin(lifted: _dragging)),
           ),
         SafeArea(
@@ -178,12 +208,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 ),
               const Spacer(),
               _MapButton(
-                icon: Icons.near_me_rounded,
+                icon: showCar ? (_follow ? Icons.navigation_rounded : Icons.navigation_outlined) : Icons.near_me_rounded,
                 tooltip: t.t('my_location'),
                 onTap: () async {
+                  if (showCar) {
+                    setState(() => _follow = true);
+                    return;
+                  }
                   await _ctl.locate();
                   final me = ref.read(rideProvider).myLocation;
-                  if (me != null && _mapReady) _map.move(me, 16);
+                  if (me != null) _map.moveTo(me, zoom: 16.5);
                 },
               ),
             ]),

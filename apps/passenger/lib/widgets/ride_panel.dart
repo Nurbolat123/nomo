@@ -112,7 +112,8 @@ class _OnTrip extends ConsumerWidget {
       case OrderStatus.assigned:
         final pos = state.driverPos;
         if (pos == null) return t.t('driver_on_way');
-        final m = _meters(pos, toLatLng(o.from)) * 1.35;
+        // Road distance left on the route from the map, else a straight-line guess.
+        final m = state.remainingM ?? _meters(pos, toLatLng(o.from)) * 1.35;
         final secs = (m / (28000 / 3600)).round();
         return t.f('driver_arrives_in', {'m': minutes(secs, unit: t.t('min'))});
       case OrderStatus.arrived:

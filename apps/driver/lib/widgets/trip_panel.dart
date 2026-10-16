@@ -56,6 +56,7 @@ class _Active extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final t = S.of(context);
     final ctl = ref.read(driverProvider.notifier);
+    final remaining = ref.watch(driverProvider.select((s) => s.remainingM));
     final o = order;
     final toPickup = o.status != OrderStatus.inProgress;
     final target = toPickup ? o.from : o.to;
@@ -69,6 +70,12 @@ class _Active extends ConsumerWidget {
         Expanded(child: Text(title, style: Theme.of(context).textTheme.titleLarge)),
         Text(money(o.price), style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
       ]),
+      if (remaining != null)
+        Padding(
+          padding: const EdgeInsets.only(top: 2),
+          child: Text('${minutes((remaining / (28000 / 3600)).round(), unit: t.t('min'))} · ${distance(remaining.round())}',
+              style: const TextStyle(color: NomoColors.gold, fontWeight: FontWeight.w700)),
+        ),
       const SizedBox(height: 8),
       Text(target.addr.isEmpty ? '—' : target.addr, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
       if (o.comment.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 4), child: Text('«${o.comment}»', style: const TextStyle(color: NomoColors.ink2))),
