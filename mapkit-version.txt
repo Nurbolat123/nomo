@@ -1,0 +1,7 @@
+  yandex_maps_mapkit:
+    dependency: "direct main"
+    description:
+      name: yandex_maps_mapkit
+      sha256: ce14f7b4200d29c09a781a54a6dab1e967ed261f3c1b8b5a0b241b444cee904f
+      url: "https://pub.dev"
+/home/runner/.pub-cache/hosted/pub.dev/yandex_maps_mapkit-4.45.0
