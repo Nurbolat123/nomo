@@ -48,3 +48,28 @@ func TestResolveRoute(t *testing.T) {
 		t.Fatal("garbage polyline accepted")
 	}
 }
+
+func TestDemoPathsFollowRoad(t *testing.T) {
+	a := geo.Point{Lat: 51.2333, Lng: 51.3667}
+	b := geo.Offset(a, 0, 1500)
+	c := geo.Offset(b, -2000, 0)
+	o := &Order{From: Place{Lat: a.Lat, Lng: a.Lng}, To: Place{Lat: c.Lat, Lng: c.Lng}, Route: geo.Encode([]geo.Point{a, b, c})}
+	approach, trip := demoPaths(o)
+	if len(trip) != 3 {
+		t.Fatalf("trip must be the road route, got %d points", len(trip))
+	}
+	// The bot comes back along the first 900 m of the route and ends at the pickup.
+	if d := geo.Length(approach); d < 880 || d > 920 {
+		t.Fatalf("approach length = %.0f", d)
+	}
+	end := approach[len(approach)-1]
+	if geo.DistanceM(end, a) > 2 {
+		t.Fatalf("approach ends %.0f m from pickup", geo.DistanceM(end, a))
+	}
+	// Without a route: straight lines.
+	o.Route = ""
+	approach, trip = demoPaths(o)
+	if len(approach) != 2 || len(trip) != 2 {
+		t.Fatal("fallback paths must be straight lines")
+	}
+}

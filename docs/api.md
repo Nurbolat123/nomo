@@ -26,9 +26,9 @@ Money in whole tenge (`currency` field), distances in meters, durations in secon
 ## Passenger
 | Method | Path | Notes |
 | --- | --- | --- |
-| POST | /v1/quotes | `{from:{lat,lng,addr}, to:{…}}` → per tariff `{tariff, name, price, surge, eta_s, distance_m, duration_s}` |
+| POST | /v1/quotes | `{from:{lat,lng,addr}, to:{…}, route?}` → per tariff `{tariff, name, price, surge, eta_s, distance_m, duration_s}` |
 | GET | /v1/drivers/nearby?lat=&lng= | free cars for the map |
-| POST | /v1/orders | `{from, to, tariff, payment_method: cash\|card, payment_method_id?, comment?, child_seat?, with_pet?}` |
+| POST | /v1/orders | `{from, to, tariff, payment_method: cash\|card, payment_method_id?, comment?, child_seat?, with_pet?, route?}`; the order returns `route` (encoded polyline) |
 | GET | /v1/orders, /v1/orders/active | history (30), current trip or `null` |
 | POST | /v1/orders/{id}/cancel | `{reason?}`; fee after 2 min from assignment or once the driver arrived |
 | POST | /v1/orders/{id}/rate | `{rating 1-5, comment?}` once, after completion |
@@ -58,6 +58,14 @@ Money in whole tenge (`currency` field), distances in meters, durations in secon
 `GET /v1/admin/live`, `GET /v1/admin/stats?days=`, `GET /v1/admin/drivers?status=`, `GET /v1/admin/drivers/{id}`,
 `POST /v1/admin/drivers/{id}/status {status, note, classes}`, `GET /v1/admin/files/{path}`,
 `GET /v1/admin/tariffs`, `PUT /v1/admin/tariffs/{code}`, `GET /v1/admin/orders?status=&phone=`, `POST /v1/admin/orders/{id}/cancel`.
+
+## Road route hint
+
+`route: {distance_m, duration_s, polyline}` — the driving route the app built with Yandex MapKit
+(Google encoded polyline, precision 5). The server uses it for the price only if the line starts and ends
+within 350 m of the points, its length matches `distance_m` (±25 %), the distance is 0.95–3× the straight
+line and the average speed is 4–110 km/h; otherwise it falls back to straight line × 1.35. Accepted
+routes are stored and returned as `order.route` / `offer.route`.
 
 ## Order statuses
 `searching → assigned → arrived → in_progress → completed`, or `cancelled` / `no_drivers` (search timed out, 3 min).

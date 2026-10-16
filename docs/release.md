@@ -8,9 +8,29 @@
 | Оплата картой | `backend/internal/payments` | тестовый провайдер | эквайринг (Halyk ePay, Kaspi Pay, CloudPayments…) — реализовать `payments.Provider`, в приложении открыть страницу привязки карты банка (`payment_methods_screen.dart`, TODO) |
 | Звонки | `backend/internal/app/realtime.go` `CallProvider` | отдаёт настоящий номер | телефония с подменными номерами (Zadarma, Mango Office) |
 | Push | `backend/internal/push` | лог; FCM готов | создать проект Firebase, задать `FCM_PROJECT_ID` и `FCM_SERVICE_ACCOUNT_JSON`; в приложения добавить `firebase_messaging` и отправку токена в `POST /v1/push-tokens` |
-| Карты | `packages/core/lib/src/widgets/nomo_map.dart` | тайлы OpenStreetMap | тайлы 2GIS/MapTiler с ключом (`--dart-define=TILE_URL=…`) |
-| Адреса | `packages/core/lib/src/geocoding.dart` | Nominatim (OSM) | 2GIS Catalog API или Яндекс Геокодер — реализовать `Geocoder` |
-| Маршрут и время | `backend/internal/geo` | прямая × 1,35, 28 км/ч | Routing API 2GIS / Яндекс — для точной цены и времени подачи |
+| Карты и маршруты | `packages/core/lib/src/map/` | Яндекс MapKit при наличии ключа, иначе OpenStreetMap и прямые линии | ключ MapKit (см. раздел «Яндекс Карты» ниже) |
+| Адреса | `packages/core/lib/src/geocoding.dart` | Nominatim (OSM) | Яндекс Геокодер/Саджест из MapKit — реализовать `Geocoder` |
+
+## Яндекс Карты (MapKit)
+
+Карта, маршруты по дорогам, плавное движение машины и траектория работают на Яндекс MapKit.
+
+1. Зайдите в [кабинет разработчика](https://developer.tech.yandex.ru/) → «Подключить API» → **MapKit — мобильный SDK**.
+   Ключ активируется примерно через 15 минут.
+2. Бесплатно — до 1 000 активных пользователей в день; дальше годовой тариф Яндекса
+   ([цены](https://yandex.ru/dev/tariffs/doc/ru/mapkit/prices/)). Для такси прочитайте
+   [оферту Maps API](https://yandex.ru/legal/maps_api_offer) или уточните у Яндекса условия коммерческого использования.
+3. Передайте ключ при запуске и сборке (в git его не кладите):
+   ```bash
+   flutter run --dart-define=YANDEX_MAPKIT_KEY=ваш_ключ --dart-define=API_URL=http://192.168.1.10:8080
+   ```
+   В GitHub: Settings → Secrets and variables → Actions → секрет `YANDEX_MAPKIT_KEY` (и переменная `API_URL`) —
+   тогда CI соберёт APK с картами, скачать их можно во вкладке Actions → Artifacts.
+4. Без ключа приложения работают на OpenStreetMap с прямыми линиями вместо маршрутов — удобно для разработки.
+
+Как устроено: маршрут строит приложение через MapKit (`YandexRouteService`) и отправляет его на сервер
+вместе с заказом; сервер проверяет, что маршрут правдоподобный, считает по нему цену и хранит его в заказе.
+Для сборки Android нужен JDK 21 (идёт с Android Studio).
 
 ## 2. Сервер
 

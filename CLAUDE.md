@@ -25,7 +25,7 @@
 
 | Часть | Технологии |
 | --- | --- |
-| Приложения | Flutter 3.27+, Riverpod 2, go_router, dio, flutter_map (OSM-тайлы, заменяемые), geolocator |
+| Приложения | Flutter 3.29+, Riverpod 2, go_router, dio, Яндекс MapKit (`yandex_maps_mapkit`, OSM-фолбэк на flutter_map), geolocator; Android — JDK 21 |
 | Общий пакет | `packages/core`: модели, `ApiClient`, `RealtimeClient` (WebSocket), тема, переводы, карта, вход, чат, настройки |
 | Бэкенд | Go 1.24 (stdlib net/http), PostgreSQL 16, Redis (GEO для водителей), coder/websocket, JWT |
 | Админка | React 18 + TypeScript + Vite + Leaflet |
@@ -37,6 +37,7 @@
 apps/passenger   lib/state/ride_controller.dart — вся логика поездки; screens/, widgets/ — экраны и панели
 apps/driver      lib/state/driver_controller.dart, location_service.dart; screens/, widgets/
 packages/core    lib/src/ — api, models, realtime, providers, theme, strings, geocoding, widgets/
+                 lib/src/map/ — NomoMap (Яндекс/OSM), CarMotion (плавная машина, траектория), RouteService (маршруты MapKit), route_math
 backend          cmd/api — запуск; internal/app — HTTP, диспетчеризация, демо; pricing, geo, auth, payments, sms, push, realtime, db
 admin            src/pages — Обзор, Водители, Заказы, Тарифы
 docs             api.md, release.md, store/, legal/
@@ -56,12 +57,18 @@ Info.plist, PrivacyInfo, minSdk 28, iOS 16, подпись релиза). Пра
 - Геолокация водителя: только «во время использования» + foreground service (Android) / background mode (iOS), пока водитель на линии.
 - Демо-режим (`DEMO_MODE`): номер `+77000000000`, код `0000` — заказ выполняет бот-водитель. Нужен ревьюерам сторов.
 - Realtime-хаб в памяти процесса: для нескольких экземпляров API перевести на Redis pub/sub.
+- Карта: `NomoMap` — единый виджет; ключ `YANDEX_MAPKIT_KEY` (dart-define) включает Яндекс MapKit, без ключа — OSM.
+  Маршрут строит приложение через MapKit и шлёт серверу (`route: {distance_m, duration_s, polyline}`); сервер его
+  проверяет (`backend/internal/app/route.go`), считает цену и хранит `orders.route_polyline`. Пройденная часть
+  маршрута срезается по положению машины, траектория рисуется серым, камера следует за машиной до жеста пользователя.
+- Объекты MapKit (слушатели, сессии) держать сильными ссылками — MapKit хранит слабые.
+- Логи GitHub Actions отсюда не читаются: ошибки CI приходят аннотациями (`tool/ci_run.sh`).
 
 ## Что осталось до запуска (подробно — docs/release.md)
 
 1. SMS-провайдер (`sms.Sender`), эквайринг (`payments.Provider` + страница привязки карты в приложении).
 2. Firebase: `firebase_messaging` в приложениях, отправка токена в `POST /v1/push-tokens`.
-3. Коммерческие карты и геокодер (2GIS/Яндекс), Routing API для точных цены и времени подачи.
+3. Ключ Яндекс MapKit, геокодер/саджест Яндекса вместо Nominatim.
 4. Телефония с подменными номерами (`CallProvider`).
 5. Шрифт Manrope в `assets/fonts` и `NomoTheme.fontFamily`.
 6. Проверка казахских переводов, скриншоты, публикация политики и условий.

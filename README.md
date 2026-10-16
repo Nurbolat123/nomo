@@ -13,7 +13,8 @@
 
 ## Быстрый старт
 
-Нужно: Docker, Go 1.24, Node 22, Flutter 3.27+ (для iOS — Mac с Xcode).
+Нужно: Docker, Go 1.24, Node 22, Flutter 3.29+, JDK 21 (для iOS — Mac с Xcode).
+Ключ Яндекс MapKit — см. `docs/release.md`; без него карта открывается на OpenStreetMap.
 
 ```bash
 # 1. База, Redis и API
@@ -24,8 +25,8 @@ cd admin && npm install && npm run dev
 
 # 3. Приложения (один раз создаёт iOS/Android проекты, иконки и сплэш)
 ./tool/setup_native.sh
-cd apps/passenger && flutter run --dart-define=API_URL=http://<IP компьютера>:8080
-cd apps/driver    && flutter run --dart-define=API_URL=http://<IP компьютера>:8080
+cd apps/passenger && flutter run --dart-define=API_URL=http://<IP компьютера>:8080 --dart-define=YANDEX_MAPKIT_KEY=<ключ>
+cd apps/driver    && flutter run --dart-define=API_URL=http://<IP компьютера>:8080 --dart-define=YANDEX_MAPKIT_KEY=<ключ>
 ```
 
 Войти без SMS: в режиме разработки код пишется в лог API (`docker compose logs -f api`).
