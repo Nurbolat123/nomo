@@ -62,11 +62,14 @@ APPS = {
     },
 }
 
-KTS_KEYSTORE = """val keystoreProperties = java.util.Properties().apply {
-    val f = rootProject.file("key.properties")
-    if (f.exists()) f.inputStream().use { load(it) }
+KTS_KEYSTORE = """val keystoreProperties = Properties()
+val keystorePropertiesFile = rootProject.file("key.properties")
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 }
 """
+
+KTS_IMPORTS = "import java.io.FileInputStream\nimport java.util.Properties\n\n"
 
 KTS_SIGNING = """    signingConfigs {
         create("release") {
@@ -128,6 +131,7 @@ def patch_android(app: str, cfg: dict) -> None:
         g = re.sub(r"minSdkVersion\s+flutter\.minSdkVersion", "minSdkVersion 28", g)
         if gradle.suffix == ".kts" and "keystoreProperties" not in g:
             # Release signing from android/key.properties (see docs/release.md).
+            g = KTS_IMPORTS + g
             g = g.replace("android {", KTS_KEYSTORE + "\nandroid {", 1)
             g = g.replace("    buildTypes {", KTS_SIGNING + "    buildTypes {", 1)
             g = g.replace('signingConfig = signingConfigs.getByName("debug")',
